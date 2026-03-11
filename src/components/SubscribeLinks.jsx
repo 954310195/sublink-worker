@@ -85,6 +85,29 @@ export const SubscribeLinks = (props) => {
           </div >
         </div >
 
+    {/* Stash Link */ }
+    < div class="relative group" >
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {t('stashLink')}
+          </label>
+          <div class="flex gap-2">
+            <input 
+              type="text" 
+              readonly 
+              value={links.stash} 
+              class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-400 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200 font-mono text-sm"
+            />
+            <button 
+              type="button"
+              x-on:click={`$clipboard('${links.stash}'); copied = 'stash'; setTimeout(() => copied = null, 2000)`}
+              class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 hover:text-green-600 dark:hover:text-green-400 transition-colors duration-200"
+              x-bind:class="{'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400': copied === 'stash'}"
+            >
+              <i class="fas" x-bind:class="copied === 'stash' ? 'fa-check' : 'fa-copy'"></i>
+            </button >
+          </div >
+        </div >
+
     {/* Surge Link */ }
     < div class="relative group" >
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

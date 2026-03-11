@@ -77,6 +77,31 @@ describe('Worker', () => {
         expect(text).toContain('proxies:');
     });
 
+    it('GET /stash returns YAML with Stash subscription metadata', async () => {
+        const app = createTestApp();
+        const config = 'vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogInRlc3QiLA0KICAiYWRkIjogIjEuMS4xLjEiLA0KICAicG9ydCI6ICI0NDMiLA0KICAiaWQiOiAiYWRkNjY2NjYtODg4OC04ODg4LTg4ODgtODg4ODg4ODg4ODg4IiwNCiAgImFpZCI6ICIwIiwNCiAgInNjeSI6ICJhdXRvIiwNCiAgIm5ldCI6ICJ3cyIsDQogICJ0eXBlIjogIm5vbmUiLA0KICAiaG9zdCI6ICIiLA0KICAicGF0aCI6ICIvIiwNCiAgInRscyI6ICJ0bHMiDQp9';
+        const res = await app.request(`http://localhost/stash?config=${encodeURIComponent(config)}`);
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('content-type')).toContain('text/yaml');
+        expect(res.headers.get('subscription-userinfo')).toContain('upload=0;');
+        const text = await res.text();
+        expect(text).toContain('#SUBSCRIBED http://localhost/stash?');
+        expect(text).toContain('follow-rule: false');
+    });
+
+    it('HEAD /stash returns subscription headers without body', async () => {
+        const app = createTestApp();
+        const config = 'vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogInRlc3QiLA0KICAiYWRkIjogIjEuMS4xLjEiLA0KICAicG9ydCI6ICI0NDMiLA0KICAiaWQiOiAiYWRkNjY2NjYtODg4OC04ODg4LTg4ODgtODg4ODg4ODg4ODg4IiwNCiAgImFpZCI6ICIwIiwNCiAgInNjeSI6ICJhdXRvIiwNCiAgIm5ldCI6ICJ3cyIsDQogICJ0eXBlIjogIm5vbmUiLA0KICAiaG9zdCI6ICIiLA0KICAicGF0aCI6ICIvIiwNCiAgInRscyI6ICJ0bHMiDQp9';
+        const res = await app.request(`http://localhost/stash?config=${encodeURIComponent(config)}`, {
+            method: 'HEAD'
+        });
+
+        expect(res.status).toBe(200);
+        expect(res.headers.get('subscription-userinfo')).toContain('total=');
+        expect(await res.text()).toBe('');
+    });
+
     it('GET /shorten-v2 returns short code', async () => {
         const url = 'http://example.com';
         const kvMock = {

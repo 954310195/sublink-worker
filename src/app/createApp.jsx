@@ -8,6 +8,7 @@ import { Footer } from '../components/Footer.jsx';
 import { UpdateChecker } from '../components/UpdateChecker.jsx';
 import { SingboxConfigBuilder } from '../builders/SingboxConfigBuilder.js';
 import { ClashConfigBuilder } from '../builders/ClashConfigBuilder.js';
+import { StashConfigBuilder } from '../builders/StashConfigBuilder.js';
 import { SurgeConfigBuilder } from '../builders/SurgeConfigBuilder.js';
 import { createTranslator, resolveLanguage } from '../i18n/index.js';
 import { encodeBase64, tryDecodeSubscriptionLines } from '../utils.js';
@@ -165,6 +166,58 @@ export function createApp(bindings = {}) {
             return handleError(c, error, runtime.logger);
         }
     });
+
+    const stashHandler = async (c) => {
+        try {
+            const config = c.req.query('config');
+            if (!config) {
+                return c.text('Missing config parameter', 400);
+            }
+
+            const selectedRules = parseSelectedRules(c.req.query('selectedRules'));
+            const customRules = parseJsonArray(c.req.query('customRules'));
+            const ua = c.req.query('ua') || getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT;
+            const groupByCountry = parseBooleanFlag(c.req.query('group_by_country'));
+            const includeAutoSelect = c.req.query('include_auto_select') !== 'false';
+            const configId = c.req.query('configId');
+            const lang = c.get('lang');
+
+            let baseConfig;
+            if (configId) {
+                const storage = requireConfigStorage(services.configStorage);
+                baseConfig = await storage.getConfigById(configId);
+            }
+
+            const builder = new StashConfigBuilder(
+                config,
+                selectedRules,
+                customRules,
+                baseConfig,
+                lang,
+                ua,
+                groupByCountry,
+                includeAutoSelect
+            );
+            builder.setSubscriptionUrl(c.req.url);
+            const output = await builder.build();
+
+            const headers = {
+                'Content-Type': 'text/yaml; charset=utf-8',
+                'Subscription-Userinfo': 'upload=0; download=0; total=10737418240; expire=2546249531'
+            };
+
+            if (c.req.method === 'HEAD') {
+                return new Response(null, { status: 200, headers });
+            }
+
+            return c.text(output, 200, headers);
+        } catch (error) {
+            return handleError(c, error, runtime.logger);
+        }
+    };
+
+    app.get('/stash', stashHandler);
+    app.on('HEAD', '/stash', stashHandler);
 
     app.get('/surge', async (c) => {
         try {
@@ -329,6 +382,7 @@ export function createApp(bindings = {}) {
     app.get('/s/:code', redirectHandler('surge'));
     app.get('/b/:code', redirectHandler('singbox'));
     app.get('/c/:code', redirectHandler('clash'));
+    app.get('/t/:code', redirectHandler('stash'));
     app.get('/x/:code', redirectHandler('xray'));
 
     app.post('/config', async (c) => {
@@ -362,13 +416,13 @@ export function createApp(bindings = {}) {
 
             const prefix = pathParts[1];
             const shortCode = pathParts[2];
-            if (!['b', 'c', 'x', 's'].includes(prefix)) return c.text(t('invalidShortUrl'), 400);
+            if (!['b', 'c', 'x', 's', 't'].includes(prefix)) return c.text(t('invalidShortUrl'), 400);
 
             const shortLinks = requireShortLinkService(services.shortLinks);
             const originalParam = await shortLinks.resolveShortCode(shortCode);
             if (!originalParam) return c.text(t('shortUrlNotFound'), 404);
 
-            const mapping = { b: 'singbox', c: 'clash', x: 'xray', s: 'surge' };
+            const mapping = { b: 'singbox', c: 'clash', x: 'xray', s: 'surge', t: 'stash' };
             const originalUrl = `${urlObj.origin}/${mapping[prefix]}${originalParam}`;
             return c.json({ originalUrl });
         } catch (error) {

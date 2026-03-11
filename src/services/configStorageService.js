@@ -45,7 +45,7 @@ export class ConfigStorageService {
     }
 
     serializeConfig(type, content) {
-        if (type === 'clash') {
+        if (type === 'clash' || type === 'stash') {
             if (typeof content === 'string' && (content.trim().startsWith('-') || content.includes(':'))) {
                 const yamlConfig = yaml.load(content);
                 return JSON.stringify(yamlConfig);

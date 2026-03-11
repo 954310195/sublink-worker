@@ -306,7 +306,7 @@ export const formLogicFn = (t) => {
                 }
 
                 try {
-                    if (this.configType === 'clash') {
+                    if (this.configType === 'clash' || this.configType === 'stash') {
                         if (!window.jsyaml || !window.jsyaml.load) {
                             throw new Error(window.APP_TRANSLATIONS.parserUnavailable || 'Parser unavailable. Please refresh and try again.');
                         }
@@ -397,6 +397,7 @@ export const formLogicFn = (t) => {
                         xray: origin + '/xray?' + queryString,
                         singbox: origin + '/singbox?' + queryString,
                         clash: origin + '/clash?' + queryString,
+                        stash: origin + '/stash?' + queryString,
                         surge: origin + '/surge?' + queryString
                     };
 
@@ -465,6 +466,7 @@ export const formLogicFn = (t) => {
                                 xray: 'x',
                                 singbox: 'b',
                                 clash: 'c',
+                                stash: 't',
                                 surge: 's'
                             };
 
@@ -512,13 +514,13 @@ export const formLogicFn = (t) => {
                 try {
                     const url = new URL(text);
                     // Check if it matches our short link pattern: /[bcxs]/[code]
-                    const pathMatch = url.pathname.match(/^\/([bcxs])\/([a-zA-Z0-9_-]+)$/);
+                    const pathMatch = url.pathname.match(/^\/([bcxst])\/([a-zA-Z0-9_-]+)$/);
                     if (pathMatch) {
                         return true;
                     }
 
                     // Check if it's a full subscription URL with query params
-                    const fullMatch = url.pathname.match(/^\/(singbox|clash|xray|surge)$/);
+                    const fullMatch = url.pathname.match(/^\/(singbox|clash|stash|xray|surge)$/);
                     if (fullMatch && url.search) {
                         return true;
                     }
@@ -546,7 +548,7 @@ export const formLogicFn = (t) => {
                     }
 
                     // Check if it's a short link
-                    const shortMatch = urlToParse.pathname.match(/^\/([bcxs])\/([a-zA-Z0-9_-]+)$/);
+                    const shortMatch = urlToParse.pathname.match(/^\/([bcxst])\/([a-zA-Z0-9_-]+)$/);
 
                     if (shortMatch) {
                         // It's a short link, resolve it first

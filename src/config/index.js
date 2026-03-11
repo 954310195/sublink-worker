@@ -30,7 +30,8 @@ export {
 	getOutbounds,
 	generateRules,
 	generateRuleSets,
-	generateClashRuleSets
+	generateClashRuleSets,
+	generateStashRuleSets
 } from './ruleGenerators.js';
 
 // Subconverter Config
@@ -39,4 +40,5 @@ export { generateSubconverterConfig } from './subconverterConfig.js';
 // Platform Configs
 export { SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11 } from './singboxConfig.js';
 export { CLASH_CONFIG } from './clashConfig.js';
+export { STASH_CONFIG } from './stashConfig.js';
 export { SURGE_CONFIG } from './surgeConfig.js';
