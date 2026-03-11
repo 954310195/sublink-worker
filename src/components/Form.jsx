@@ -344,7 +344,42 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
       </form>
 
   {/* Results Section */ }
-  <div x-cloak x-show="generatedLinks" x-data="{ copied: null }" {...{'x-transition:enter': 'transition ease-out duration-500', 'x-transition:enter-start': 'opacity-0 transform translate-y-8', 'x-transition:enter-end': 'opacity-100 transform translate-y-0'}} class="mt-12">
+  <div
+    x-cloak
+    x-show="generatedLinks"
+    x-data={`{
+      copied: null,
+      qrLink: null,
+      qrLabel: '',
+      openQr(label, link) {
+        if (!link) return;
+        this.qrLabel = label;
+        this.qrLink = link;
+        this.$nextTick(() => {
+          const container = this.$refs.qrCode;
+          if (!container || typeof qrcode !== 'function') return;
+          container.innerHTML = '';
+          const qr = qrcode(0, 'M');
+          qr.addData(link);
+          qr.make();
+          container.innerHTML = qr.createImgTag(6, 12);
+          const img = container.querySelector('img');
+          if (img) {
+            img.className = 'w-64 h-64 rounded-2xl shadow-sm';
+            img.alt = label || 'QR code';
+          }
+        });
+      },
+      closeQr() {
+        this.qrLink = null;
+        this.qrLabel = '';
+        if (this.$refs.qrCode) this.$refs.qrCode.innerHTML = '';
+      }
+    }`}
+    {...{'x-on:keydown.escape.window': 'if (qrLink) closeQr()'}}
+    {...{'x-transition:enter': 'transition ease-out duration-500', 'x-transition:enter-start': 'opacity-0 transform translate-y-8', 'x-transition:enter-end': 'opacity-100 transform translate-y-0'}}
+    class="mt-12"
+  >
     <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8 transition-all duration-300 hover:shadow-md">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <h2 class="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -382,6 +417,16 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
               >
                 <i class="fas" x-bind:class={`copied === '${field.key}' ? 'fa-check' : 'fa-copy'`}></i>
               </button>
+              <button
+                type="button"
+                x-show="shortenedLinks"
+                x-on:click={`openQr('${t(field.labelKey)}', shortenedLinks?.${field.key})`}
+                class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 hover:bg-primary-100 dark:hover:bg-primary-900/30 hover:text-primary-600 dark:hover:text-primary-400"
+                title={t('scanQRCode')}
+                aria-label={t('scanQRCode')}
+              >
+                <i class="fas fa-qrcode"></i>
+              </button>
             </div>
           </div>
         ))}
@@ -405,7 +450,7 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
         <div class="flex justify-center mt-4">
           <button
             type="button"
-            x-on:click="shortenedLinks ? shortenedLinks = null : shortenLinks()"
+            x-on:click="if (shortenedLinks) { shortenedLinks = null; closeQr(); } else { shortenLinks(); }"
             x-bind:disabled="!shortenedLinks && shortening"
             class="px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center gap-2 shadow-lg"
             x-bind:class="shortenedLinks
@@ -421,6 +466,36 @@ class="px-6 py-3.5 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 bo
             ></span>
           </button>
         </div>
+      </div>
+    </div>
+
+    <div
+      x-cloak
+      x-show="qrLink"
+      {...{'x-on:click.self': 'closeQr()'}}
+      class="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 backdrop-blur-sm px-4"
+    >
+      <div class="w-full max-w-sm rounded-3xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-2xl p-6">
+        <div class="flex items-start justify-between gap-4 mb-5">
+          <div>
+            <p class="text-lg font-bold text-gray-900 dark:text-white">{t('scanQRCode')}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1" x-text="qrLabel"></p>
+          </div>
+          <button
+            type="button"
+            x-on:click="closeQr()"
+            class="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            aria-label={t('clear')}
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+
+        <div class="rounded-3xl bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-5 flex items-center justify-center min-h-[18rem]">
+          <div x-ref="qrCode" class="flex items-center justify-center"></div>
+        </div>
+
+        <p class="mt-4 text-xs text-gray-500 dark:text-gray-400 break-all text-center font-mono" x-text="qrLink"></p>
       </div>
     </div>
   </div>
