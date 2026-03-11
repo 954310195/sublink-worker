@@ -37,4 +37,17 @@ describe('StashConfigBuilder', () => {
         expect(proxy).not.toHaveProperty('up');
         expect(proxy).not.toHaveProperty('down');
     });
+
+    it('normalizes nameserver-policy values to strings for Stash dns parsing', async () => {
+        const config = 'vmess://ew0KICAidiI6ICIyIiwNCiAgInBzIjogInRlc3QiLA0KICAiYWRkIjogIjEuMS4xLjEiLA0KICAicG9ydCI6ICI0NDMiLA0KICAiaWQiOiAiYWRkNjY2NjYtODg4OC04ODg4LTg4ODgtODg4ODg4ODg4ODg4IiwNCiAgImFpZCI6ICIwIiwNCiAgInNjeSI6ICJhdXRvIiwNCiAgIm5ldCI6ICJ3cyIsDQogICJ0eXBlIjogIm5vbmUiLA0KICAiaG9zdCI6ICIiLA0KICAicGF0aCI6ICIvIiwNCiAgInRscyI6ICJ0bHMiDQp9';
+        const builder = new StashConfigBuilder(config, 'minimal', [], null, 'en-US', 'Stash/1.0');
+
+        const output = await builder.build();
+        const parsed = parseStashYaml(output);
+
+        expect(typeof parsed?.dns?.['nameserver-policy']?.['geosite:cn,private']).toBe('string');
+        expect(parsed?.dns?.['nameserver-policy']?.['geosite:cn,private']).toBe('https://120.53.53.53/dns-query');
+        expect(typeof parsed?.dns?.['nameserver-policy']?.['geosite:geolocation-!cn']).toBe('string');
+        expect(parsed?.dns?.['nameserver-policy']?.['geosite:geolocation-!cn']).toBe('https://dns.cloudflare.com/dns-query');
+    });
 });

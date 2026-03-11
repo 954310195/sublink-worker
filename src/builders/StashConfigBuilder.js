@@ -28,6 +28,29 @@ function normalizeMbps(value) {
     return Number.isFinite(parsed) ? parsed : trimmed;
 }
 
+function normalizeStashDnsConfig(dns) {
+    if (!dns || typeof dns !== 'object' || Array.isArray(dns)) {
+        return dns;
+    }
+
+    const result = { ...dns };
+    const policy = result['nameserver-policy'];
+
+    if (policy && typeof policy === 'object' && !Array.isArray(policy)) {
+        result['nameserver-policy'] = Object.fromEntries(
+            Object.entries(policy).map(([key, value]) => {
+                if (Array.isArray(value)) {
+                    const firstString = value.find((item) => typeof item === 'string' && item.trim() !== '');
+                    return [key, firstString ?? ''];
+                }
+                return [key, value];
+            })
+        );
+    }
+
+    return result;
+}
+
 export class StashConfigBuilder extends ClashConfigBuilder {
     constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, includeAutoSelect = true) {
         super(
@@ -130,6 +153,10 @@ export class StashConfigBuilder extends ClashConfigBuilder {
             ...ruleResults,
             `MATCH,${this.t('outboundNames.Fall Back')}`
         ];
+
+        if (this.config.dns) {
+            this.config.dns = normalizeStashDnsConfig(this.config.dns);
+        }
 
         return yaml.dump(this.config);
     }
