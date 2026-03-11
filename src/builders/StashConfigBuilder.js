@@ -43,11 +43,6 @@ export class StashConfigBuilder extends ClashConfigBuilder {
             undefined,
             includeAutoSelect
         );
-        this.subscriptionUrl = null;
-    }
-
-    setSubscriptionUrl(url) {
-        this.subscriptionUrl = url || null;
     }
 
     generateProxyProviders() {
@@ -136,11 +131,6 @@ export class StashConfigBuilder extends ClashConfigBuilder {
             `MATCH,${this.t('outboundNames.Fall Back')}`
         ];
 
-        const rendered = yaml.dump(this.config);
-        if (!this.subscriptionUrl) {
-            return rendered;
-        }
-
-        return `#SUBSCRIBED ${this.subscriptionUrl}\n${rendered}`;
+        return yaml.dump(this.config);
     }
 }

@@ -198,7 +198,6 @@ export function createApp(bindings = {}) {
                 groupByCountry,
                 includeAutoSelect
             );
-            builder.setSubscriptionUrl(c.req.url);
             const output = await builder.build();
 
             const headers = {
