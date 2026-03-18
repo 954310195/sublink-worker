@@ -39,5 +39,6 @@ describe('formLogic toString fix', () => {
     expect(fnString).toContain('dialer_proxy_rules');
     expect(fnString).toContain('dialerProxyRules');
     expect(fnString).toContain('refreshDetectedProxies');
+    expect(fnString).toContain('availableChainTargets');
   });
 });

@@ -86,6 +86,7 @@ export const formLogicFn = (t) => {
             groupByCountry: false,
             includeAutoSelect: true,
             detectedProxies: [],
+            availableChainTargets: [],
             inspectingNodes: false,
             dialerProxyRules: [],
             enableClashUI: false,
@@ -170,8 +171,23 @@ export const formLogicFn = (t) => {
                     this.handleInputChange(val);
                 });
                 this.$watch('showAdvanced', val => localStorage.setItem('advancedToggle', val));
-                this.$watch('groupByCountry', val => localStorage.setItem('groupByCountry', val));
-                this.$watch('includeAutoSelect', val => localStorage.setItem('includeAutoSelect', val));
+                this.$watch('groupByCountry', val => {
+                    localStorage.setItem('groupByCountry', val);
+                    if (this.input.trim()) {
+                        this.refreshDetectedProxies(this.input.trim());
+                    }
+                });
+                this.$watch('includeAutoSelect', val => {
+                    localStorage.setItem('includeAutoSelect', val);
+                    if (this.input.trim()) {
+                        this.refreshDetectedProxies(this.input.trim());
+                    }
+                });
+                this.$watch('selectedRules', () => {
+                    if (this.input.trim()) {
+                        this.refreshDetectedProxies(this.input.trim());
+                    }
+                }, { deep: true });
                 this.$watch('dialerProxyRules', val => localStorage.setItem('dialerProxyRules', JSON.stringify(val)), { deep: true });
                 this.$watch('enableClashUI', val => localStorage.setItem('enableClashUI', val));
                 this.$watch('externalController', val => localStorage.setItem('externalController', val));
@@ -192,6 +208,12 @@ export const formLogicFn = (t) => {
                 });
                 this.$watch('customShortCode', val => localStorage.setItem('customShortCode', val));
                 this.$watch('accordionSections', val => localStorage.setItem('accordionSections', JSON.stringify(val)), { deep: true });
+
+                window.addEventListener('custom-rules-updated', () => {
+                    if (this.input.trim()) {
+                        this.refreshDetectedProxies(this.input.trim());
+                    }
+                });
 
                 if (this.input.trim()) {
                     this.refreshDetectedProxies(this.input.trim());
@@ -522,6 +544,7 @@ export const formLogicFn = (t) => {
                 // If input is empty, don't try to parse
                 if (!val || !val.trim()) {
                     this.detectedProxies = [];
+                    this.availableChainTargets = [];
                     this.dialerProxyRules = [];
                     return;
                 }
@@ -577,6 +600,8 @@ export const formLogicFn = (t) => {
             async refreshDetectedProxies(text) {
                 this.inspectingNodes = true;
                 try {
+                    const customRulesInput = document.querySelector('input[name="customRules"]');
+                    const customRules = customRulesInput && customRulesInput.value ? JSON.parse(customRulesInput.value) : [];
                     const response = await fetch('/inspect', {
                         method: 'POST',
                         headers: {
@@ -584,7 +609,12 @@ export const formLogicFn = (t) => {
                         },
                         body: JSON.stringify({
                             config: text,
-                            ua: this.customUA
+                            ua: this.customUA,
+                            selectedRules: this.selectedRules,
+                            customRules,
+                            groupByCountry: this.groupByCountry,
+                            includeAutoSelect: this.includeAutoSelect,
+                            lang: window.APP_LANG || 'zh-CN'
                         })
                     });
 
@@ -594,10 +624,12 @@ export const formLogicFn = (t) => {
 
                     const data = await response.json();
                     this.detectedProxies = Array.isArray(data?.proxies) ? data.proxies : [];
+                    this.availableChainTargets = Array.isArray(data?.targets) ? data.targets : [];
                     this.syncDialerProxyRulesWithDetectedProxies();
                 } catch (error) {
                     console.error('Failed to inspect proxies:', error);
                     this.detectedProxies = [];
+                    this.availableChainTargets = [];
                     this.syncDialerProxyRulesWithDetectedProxies();
                 } finally {
                     this.inspectingNodes = false;
@@ -763,6 +795,10 @@ export const formLogicFn = (t) => {
                 if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
                     externalController || externalUiDownloadUrl || dialerProxyRules || ua || configId) {
                     this.showAdvanced = true;
+                }
+
+                if (this.input.trim()) {
+                    this.refreshDetectedProxies(this.input.trim());
                 }
             }
         }

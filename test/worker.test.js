@@ -148,6 +148,10 @@ ss://YWVzLTEyOC1nY206dGVzdA@example.com:444#US-Node-1`;
         expect(res.status).toBe(200);
         const json = await res.json();
         expect(json?.proxies?.map((item) => item.name)).toEqual(['HK-Node-1', 'US-Node-1']);
+        expect(json?.targets).toContain('HK-Node-1');
+        expect(json?.targets).toContain('🚀 节点选择');
+        expect(json?.targets).toContain('⚡ 自动选择');
+        expect(json?.targets).toContain('🐟 漏网之鱼');
     });
 
     it('HEAD /stash returns subscription headers without body', async () => {

@@ -1,4 +1,7 @@
 import { ProxyParser } from '../parsers/index.js';
+import { createTranslator } from '../i18n/index.js';
+import { getOutbounds, PREDEFINED_RULE_SETS } from '../config/index.js';
+import { groupProxiesByCountry } from '../utils.js';
 import { tryDecodeSubscriptionLines, decodeBase64 } from '../utils.js';
 
 function collectParsedConfig(result, parsedItems, configOverrides) {
@@ -125,4 +128,55 @@ export async function parseProxyInput(inputString, {
     }
 
     return { parsedItems, providerUrls, configOverrides };
+}
+
+function uniqueStrings(values = []) {
+    const seen = new Set();
+    const result = [];
+    values.forEach((value) => {
+        if (typeof value !== 'string') {
+            return;
+        }
+        const trimmed = value.trim();
+        if (!trimmed || seen.has(trimmed)) {
+            return;
+        }
+        seen.add(trimmed);
+        result.push(trimmed);
+    });
+    return result;
+}
+
+export function buildDialerProxyTargets(parsedItems = [], {
+    lang = 'zh-CN',
+    selectedRules = [],
+    customRules = [],
+    groupByCountry = false,
+    includeAutoSelect = true
+} = {}) {
+    const t = createTranslator(lang);
+    const proxyNames = uniqueStrings(parsedItems.map((item) => item?.tag));
+    const effectiveSelectedRules = Array.isArray(selectedRules) && selectedRules.length > 0
+        ? selectedRules
+        : PREDEFINED_RULE_SETS.minimal;
+    const countryGroups = groupByCountry
+        ? groupProxiesByCountry(parsedItems, { getName: (proxy) => proxy?.tag })
+        : {};
+
+    return uniqueStrings([
+        ...proxyNames,
+        t('outboundNames.Node Select'),
+        ...(includeAutoSelect ? [t('outboundNames.Auto Select')] : []),
+        ...(proxyNames.length > 0 ? [t('outboundNames.Manual Switch')] : []),
+        ...Object.keys(countryGroups)
+            .sort((a, b) => a.localeCompare(b))
+            .map((country) => {
+                const { emoji, name } = countryGroups[country] || {};
+                return emoji && name ? `${emoji} ${name}` : '';
+            }),
+        ...getOutbounds(effectiveSelectedRules).map((outbound) => t(`outboundNames.${outbound}`)),
+        ...((Array.isArray(customRules) ? customRules : [])
+            .map((rule) => t(`outboundNames.${rule?.name || ''}`))),
+        t('outboundNames.Fall Back')
+    ]);
 }

@@ -241,12 +241,15 @@ export const Form = (props) => {
 
                       <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('chainTarget')}</label>
-                        <input
-                          type="text"
+                        <select
                           x-model="rule.target"
                           class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                          placeholder={t('chainTargetPlaceholder')}
-                        />
+                        >
+                          <option value="">{t('selectChainTarget')}</option>
+                          <template x-for="target in availableChainTargets" x-bind:key="`${index}-${target}`">
+                            <option x-bind:value="target" x-text="target"></option>
+                          </template>
+                        </select>
                       </div>
 
                       <div>

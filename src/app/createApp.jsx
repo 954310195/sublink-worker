@@ -16,7 +16,7 @@ import { APP_NAME, APP_SUBTITLE } from '../constants.js';
 import { ShortLinkService } from '../services/shortLinkService.js';
 import { ConfigStorageService } from '../services/configStorageService.js';
 import { ServiceError, MissingDependencyError } from '../services/errors.js';
-import { parseProxyInput } from '../services/proxyInputService.js';
+import { buildDialerProxyTargets, parseProxyInput } from '../services/proxyInputService.js';
 import { normalizeRuntime } from '../runtime/runtimeConfig.js';
 import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
 
@@ -416,9 +416,18 @@ export function createApp(bindings = {}) {
             const body = await c.req.json();
             const config = typeof body?.config === 'string' ? body.config : '';
             const ua = typeof body?.ua === 'string' ? body.ua : (getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT);
+            const selectedRules = Array.isArray(body?.selectedRules)
+                ? body.selectedRules
+                : parseSelectedRules(typeof body?.selectedRules === 'string' ? body.selectedRules : '');
+            const customRules = Array.isArray(body?.customRules)
+                ? body.customRules
+                : parseJsonArray(typeof body?.customRules === 'string' ? body.customRules : '');
+            const groupByCountry = parseBooleanFlag(body?.groupByCountry);
+            const includeAutoSelect = body?.includeAutoSelect !== false;
+            const lang = typeof body?.lang === 'string' ? body.lang : c.get('lang');
 
             if (!config.trim()) {
-                return c.json({ proxies: [] }, 200);
+                return c.json({ proxies: [], targets: [] }, 200);
             }
 
             const { parsedItems } = await parseProxyInput(config, { userAgent: ua });
@@ -430,7 +439,14 @@ export function createApp(bindings = {}) {
                 }));
 
             return c.json({
-                proxies: dedupeProxySummaries(proxies)
+                proxies: dedupeProxySummaries(proxies),
+                targets: buildDialerProxyTargets(parsedItems, {
+                    lang,
+                    selectedRules,
+                    customRules,
+                    groupByCountry,
+                    includeAutoSelect
+                })
             });
         } catch (error) {
             if (error instanceof SyntaxError) {

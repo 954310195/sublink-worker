@@ -261,6 +261,9 @@ export const CustomRules = (props) => {
                 if (this.mode === 'form') {
                   this.jsonContent = JSON.stringify(value, null, 2);
                 }
+                window.dispatchEvent(new CustomEvent('custom-rules-updated', {
+                  detail: { rules: value }
+                }));
               });
 
               // Watch for changes in JSON content to update rules
