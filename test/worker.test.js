@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import yaml from 'js-yaml';
 import { createApp } from '../src/app/createApp.jsx';
 import { MemoryKVAdapter } from '../src/adapters/kv/memoryKv.js';
 
@@ -88,6 +89,65 @@ describe('Worker', () => {
         const text = await res.text();
         expect(text.startsWith('#SUBSCRIBED ')).toBe(false);
         expect(text).toContain('follow-rule: false');
+    });
+
+    it('GET /clash applies dialer-proxy query parameter to proxies', async () => {
+        const app = createTestApp();
+        const config = 'ss://YWVzLTEyOC1nY206dGVzdA@example.com:443#HK-Node-1';
+        const res = await app.request(`http://localhost/clash?config=${encodeURIComponent(config)}&dialer_proxy=${encodeURIComponent('relay-group')}`);
+
+        expect(res.status).toBe(200);
+        const text = await res.text();
+        const parsed = yaml.load(text);
+        expect(parsed?.proxies?.[0]?.['dialer-proxy']).toBe('relay-group');
+    });
+
+    it('GET /stash applies dialer_proxy_rules query parameter to selected proxies', async () => {
+        const app = createTestApp();
+        const config = `ss://YWVzLTEyOC1nY206dGVzdA@example.com:443#HK-Node-1
+ss://YWVzLTEyOC1nY206dGVzdA@example.com:444#US-Node-1`;
+        const rules = JSON.stringify([{ proxyNames: ['US-Node-1'], target: 'relay-group' }]);
+        const res = await app.request(`http://localhost/stash?config=${encodeURIComponent(config)}&dialer_proxy_rules=${encodeURIComponent(rules)}`);
+
+        expect(res.status).toBe(200);
+        const text = await res.text();
+        const parsed = yaml.load(text);
+        const hk = parsed?.proxies?.find((item) => item?.name === 'HK-Node-1');
+        const us = parsed?.proxies?.find((item) => item?.name === 'US-Node-1');
+        expect(hk).not.toHaveProperty('dialer-proxy');
+        expect(us?.['dialer-proxy']).toBe('relay-group');
+    });
+
+    it('GET /singbox applies dialer_proxy_rules query parameter as detour for selected proxies', async () => {
+        const app = createTestApp();
+        const config = `ss://YWVzLTEyOC1nY206dGVzdA@example.com:443#HK-Node-1
+ss://YWVzLTEyOC1nY206dGVzdA@example.com:444#US-Node-1`;
+        const rules = JSON.stringify([{ proxyNames: ['HK-Node-1'], target: 'relay-group' }]);
+        const res = await app.request(`http://localhost/singbox?config=${encodeURIComponent(config)}&dialer_proxy_rules=${encodeURIComponent(rules)}`);
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        const hk = json?.outbounds?.find((item) => item?.tag === 'HK-Node-1');
+        const us = json?.outbounds?.find((item) => item?.tag === 'US-Node-1');
+        expect(hk?.detour).toBe('relay-group');
+        expect(us).not.toHaveProperty('detour');
+    });
+
+    it('POST /inspect returns detected proxy names', async () => {
+        const app = createTestApp();
+        const config = `ss://YWVzLTEyOC1nY206dGVzdA@example.com:443#HK-Node-1
+ss://YWVzLTEyOC1nY206dGVzdA@example.com:444#US-Node-1`;
+        const res = await app.request('http://localhost/inspect', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ config })
+        });
+
+        expect(res.status).toBe(200);
+        const json = await res.json();
+        expect(json?.proxies?.map((item) => item.name)).toEqual(['HK-Node-1', 'US-Node-1']);
     });
 
     it('HEAD /stash returns subscription headers without body', async () => {

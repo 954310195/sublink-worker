@@ -40,11 +40,11 @@ function supportsMrsFormat(userAgent) {
 }
 
 export class ClashConfigBuilder extends BaseConfigBuilder {
-    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, enableClashUI = false, externalController, externalUiDownloadUrl, includeAutoSelect = true) {
+    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, enableClashUI = false, externalController, externalUiDownloadUrl, includeAutoSelect = true, dialerProxy = '', dialerProxyRules = []) {
         if (!baseConfig) {
             baseConfig = CLASH_CONFIG;
         }
-        super(inputString, baseConfig, lang, userAgent, groupByCountry, includeAutoSelect);
+        super(inputString, baseConfig, lang, userAgent, groupByCountry, includeAutoSelect, dialerProxy, dialerProxyRules);
         this.selectedRules = selectedRules;
         this.customRules = customRules;
         this.countryGroupNames = [];
@@ -114,6 +114,18 @@ export class ClashConfigBuilder extends BaseConfigBuilder {
 
     getProxyName(proxy) {
         return proxy.name;
+    }
+
+    decorateProxy(proxy) {
+        if (!proxy) {
+            return proxy;
+        }
+        const target = this.resolveDialerProxyTarget(this.getProxyName(proxy));
+        if (!target) return proxy;
+        return {
+            ...proxy,
+            'dialer-proxy': target
+        };
     }
 
     convertProxy(proxy) {

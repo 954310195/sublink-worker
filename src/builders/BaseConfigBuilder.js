@@ -1,10 +1,10 @@
-import { ProxyParser } from '../parsers/index.js';
-import { deepCopy, tryDecodeSubscriptionLines, decodeBase64 } from '../utils.js';
+import { deepCopy } from '../utils.js';
 import { createTranslator } from '../i18n/index.js';
 import { generateRules, getOutbounds, PREDEFINED_RULE_SETS } from '../config/index.js';
+import { parseProxyInput } from '../services/proxyInputService.js';
 
 export class BaseConfigBuilder {
-    constructor(inputString, baseConfig, lang, userAgent, groupByCountry = false, includeAutoSelect = true) {
+    constructor(inputString, baseConfig, lang, userAgent, groupByCountry = false, includeAutoSelect = true, dialerProxy = '', dialerProxyRules = []) {
         this.inputString = inputString;
         this.config = deepCopy(baseConfig);
         this.customRules = [];
@@ -14,6 +14,17 @@ export class BaseConfigBuilder {
         this.appliedOverrideKeys = new Set();
         this.groupByCountry = groupByCountry;
         this.includeAutoSelect = includeAutoSelect;
+        this.dialerProxy = typeof dialerProxy === 'string' ? dialerProxy.trim() : '';
+        this.dialerProxyRules = Array.isArray(dialerProxyRules)
+            ? dialerProxyRules
+                .map((rule) => ({
+                    proxyNames: Array.isArray(rule?.proxyNames)
+                        ? [...new Set(rule.proxyNames.map((name) => typeof name === 'string' ? name.trim() : '').filter(Boolean))]
+                        : [],
+                    target: typeof rule?.target === 'string' ? rule.target.trim() : ''
+                }))
+                .filter((rule) => rule.proxyNames.length > 0 && rule.target)
+            : [];
         this.providerUrls = [];  // URLs to use as providers (auto-sync)
     }
 
@@ -25,148 +36,13 @@ export class BaseConfigBuilder {
     }
 
     async parseCustomItems() {
-        const input = this.inputString || '';
-        const parsedItems = [];
+        const { parsedItems, providerUrls, configOverrides } = await parseProxyInput(this.inputString, {
+            userAgent: this.userAgent,
+            isCompatibleProviderFormat: (format) => this.isCompatibleProviderFormat(format)
+        });
 
-        // Import the content parser for direct input parsing
-        const { parseSubscriptionContent } = await import('../parsers/subscription/subscriptionContentParser.js');
-
-        // Try to parse the entire input as a config format (Sing-Box JSON or Clash YAML)
-        const directResult = parseSubscriptionContent(input);
-        if (directResult && typeof directResult === 'object' && directResult.type) {
-            // It's a parsed config (singboxConfig or yamlConfig)
-            if (directResult.config) {
-                this.applyConfigOverrides(directResult.config);
-            }
-            if (Array.isArray(directResult.proxies)) {
-                for (const proxy of directResult.proxies) {
-                    if (proxy && proxy.tag) {
-                        parsedItems.push(proxy);
-                    }
-                }
-                if (parsedItems.length > 0) return parsedItems;
-            }
-        }
-
-        // If direct parsing didn't work, check for Base64 encoded content
-        const isBase64Like = /^[A-Za-z0-9+/=\r\n]+$/.test(input) && input.replace(/[\r\n]/g, '').length % 4 === 0;
-        if (isBase64Like) {
-            try {
-                const sanitized = input.replace(/\s+/g, '');
-                const decodedWhole = decodeBase64(sanitized);
-                if (typeof decodedWhole === 'string') {
-                    const decodedResult = parseSubscriptionContent(decodedWhole);
-                    if (decodedResult && typeof decodedResult === 'object' && decodedResult.type) {
-                        if (decodedResult.config) {
-                            this.applyConfigOverrides(decodedResult.config);
-                        }
-                        if (Array.isArray(decodedResult.proxies)) {
-                            for (const proxy of decodedResult.proxies) {
-                                if (proxy && proxy.tag) {
-                                    parsedItems.push(proxy);
-                                }
-                            }
-                            if (parsedItems.length > 0) return parsedItems;
-                        }
-                    }
-                }
-            } catch (_) { }
-        }
-
-        // Otherwise, line-by-line processing (URLs, subscription content, remote lists, etc.)
-        const urls = input.split('\n').filter(url => url.trim() !== '');
-        for (const url of urls) {
-            let processedUrls = tryDecodeSubscriptionLines(url);
-            if (!Array.isArray(processedUrls)) {
-                processedUrls = [processedUrls];
-            }
-
-            for (const processedUrl of processedUrls) {
-                const trimmedUrl = typeof processedUrl === 'string' ? processedUrl.trim() : '';
-
-                // Check if it's an HTTP(S) URL - may use as provider if format matches
-                if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
-                    const { fetchSubscriptionWithFormat } = await import('../parsers/subscription/httpSubscriptionFetcher.js');
-
-                    try {
-                        const fetchResult = await fetchSubscriptionWithFormat(trimmedUrl, this.userAgent);
-                        if (fetchResult) {
-                            const { content, format, url: originalUrl } = fetchResult;
-
-                            // If format is compatible with target client, use as provider
-                            if (this.isCompatibleProviderFormat(format)) {
-                                this.providerUrls.push(originalUrl);
-                                continue;  // Skip parsing, will be used as provider
-                            }
-
-                            // Otherwise parse the content as usual
-                            const result = parseSubscriptionContent(content);
-                            if (result && typeof result === 'object' && (result.type === 'yamlConfig' || result.type === 'singboxConfig' || result.type === 'surgeConfig')) {
-                                if (result.config) {
-                                    this.applyConfigOverrides(result.config);
-                                }
-                                if (Array.isArray(result.proxies)) {
-                                    result.proxies.forEach(proxy => {
-                                        if (proxy && typeof proxy === 'object' && proxy.tag) {
-                                            parsedItems.push(proxy);
-                                        }
-                                    });
-                                }
-                                continue;
-                            }
-                            // Handle array of URIs or other formats
-                            if (Array.isArray(result)) {
-                                for (const item of result) {
-                                    if (item && typeof item === 'object' && item.tag) {
-                                        parsedItems.push(item);
-                                    } else if (typeof item === 'string') {
-                                        const subResult = await ProxyParser.parse(item, this.userAgent);
-                                        if (subResult) {
-                                            parsedItems.push(subResult);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Error processing HTTP subscription:', error);
-                    }
-                    continue;
-                }
-
-                // Non-HTTP URLs (protocol URIs like ss://, vmess://, etc.)
-                const result = await ProxyParser.parse(processedUrl, this.userAgent);
-                // Handle yamlConfig, singboxConfig, and surgeConfig types (they have the same structure)
-                if (result && typeof result === 'object' && (result.type === 'yamlConfig' || result.type === 'singboxConfig' || result.type === 'surgeConfig')) {
-                    if (result.config) {
-                        this.applyConfigOverrides(result.config);
-                    }
-                    if (Array.isArray(result.proxies)) {
-                        result.proxies.forEach(proxy => {
-                            if (proxy && typeof proxy === 'object' && proxy.tag) {
-                                parsedItems.push(proxy);
-                            }
-                        });
-                    }
-                    continue;
-                }
-                if (Array.isArray(result)) {
-                    for (const item of result) {
-                        if (item && typeof item === 'object' && item.tag) {
-                            parsedItems.push(item);
-                        } else if (typeof item === 'string') {
-                            const subResult = await ProxyParser.parse(item, this.userAgent);
-                            if (subResult) {
-                                parsedItems.push(subResult);
-                            }
-                        }
-                    }
-                } else if (result) {
-                    parsedItems.push(result);
-                }
-            }
-        }
-
+        configOverrides.forEach((config) => this.applyConfigOverrides(config));
+        this.providerUrls.push(...providerUrls);
         return parsedItems;
     }
 
@@ -314,7 +190,7 @@ export class BaseConfigBuilder {
         const validItems = customItems.filter(item => item != null);
         validItems.forEach(item => {
             if (item?.tag) {
-                const convertedProxy = this.convertProxy(item);
+                const convertedProxy = this.decorateProxy(this.convertProxy(item));
                 if (convertedProxy) {
                     this.addProxyToConfig(convertedProxy);
                 }
@@ -348,6 +224,22 @@ export class BaseConfigBuilder {
      */
     mergeUserProxyGroups(userGroups) {
         // Default: no-op. Child classes implement format-specific merge.
+    }
+
+    decorateProxy(proxy) {
+        return proxy;
+    }
+
+    resolveDialerProxyTarget(proxyName) {
+        if (typeof proxyName === 'string' && proxyName) {
+            for (let index = this.dialerProxyRules.length - 1; index >= 0; index -= 1) {
+                const rule = this.dialerProxyRules[index];
+                if (rule.proxyNames.includes(proxyName)) {
+                    return rule.target;
+                }
+            }
+        }
+        return this.dialerProxy || '';
     }
 
     generateRules() {

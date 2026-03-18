@@ -50,4 +50,23 @@ describe('StashConfigBuilder', () => {
         expect(typeof parsed?.dns?.['nameserver-policy']?.['geosite:geolocation-!cn']).toBe('string');
         expect(parsed?.dns?.['nameserver-policy']?.['geosite:geolocation-!cn']).toBe('https://dns.cloudflare.com/dns-query');
     });
+
+    it('adds dialer-proxy to selected Stash proxies when configured', async () => {
+        const config = `
+ss://YWVzLTEyOC1nY206dGVzdA@example.com:443#HK-Node-1
+ss://YWVzLTEyOC1nY206dGVzdA@example.com:444#US-Node-1
+        `;
+        const builder = new StashConfigBuilder(config, 'minimal', [], null, 'en-US', 'Stash/1.0', false, true, '', [
+            { proxyNames: ['US-Node-1'], target: 'relay-group' }
+        ]);
+
+        const output = await builder.build();
+        const parsed = parseStashYaml(output);
+
+        const hk = parsed.proxies?.find((item) => item?.name === 'HK-Node-1');
+        const us = parsed.proxies?.find((item) => item?.name === 'US-Node-1');
+
+        expect(hk).not.toHaveProperty('dialer-proxy');
+        expect(us?.['dialer-proxy']).toBe('relay-group');
+    });
 });

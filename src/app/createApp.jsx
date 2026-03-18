@@ -16,6 +16,7 @@ import { APP_NAME, APP_SUBTITLE } from '../constants.js';
 import { ShortLinkService } from '../services/shortLinkService.js';
 import { ConfigStorageService } from '../services/configStorageService.js';
 import { ServiceError, MissingDependencyError } from '../services/errors.js';
+import { parseProxyInput } from '../services/proxyInputService.js';
 import { normalizeRuntime } from '../runtime/runtimeConfig.js';
 import { PREDEFINED_RULE_SETS, SING_BOX_CONFIG, SING_BOX_CONFIG_V1_11, generateSubconverterConfig } from '../config/index.js';
 
@@ -84,6 +85,8 @@ export function createApp(bindings = {}) {
             const enableClashUI = parseBooleanFlag(c.req.query('enable_clash_ui'));
             const externalController = c.req.query('external_controller');
             const externalUiDownloadUrl = c.req.query('external_ui_download_url');
+            const dialerProxy = c.req.query('dialer_proxy') || c.req.query('dialerProxy') || '';
+            const dialerProxyRules = parseDialerProxyRules(c.req.query('dialer_proxy_rules') || c.req.query('dialerProxyRules'));
             const configId = c.req.query('configId');
             const lang = c.get('lang');
 
@@ -112,7 +115,9 @@ export function createApp(bindings = {}) {
                 externalController,
                 externalUiDownloadUrl,
                 singboxConfigVersion,
-                includeAutoSelect
+                includeAutoSelect,
+                dialerProxy,
+                dialerProxyRules
             );
             await builder.build();
             return c.json(builder.config);
@@ -136,6 +141,8 @@ export function createApp(bindings = {}) {
             const enableClashUI = parseBooleanFlag(c.req.query('enable_clash_ui'));
             const externalController = c.req.query('external_controller');
             const externalUiDownloadUrl = c.req.query('external_ui_download_url');
+            const dialerProxy = c.req.query('dialer_proxy') || c.req.query('dialerProxy') || '';
+            const dialerProxyRules = parseDialerProxyRules(c.req.query('dialer_proxy_rules') || c.req.query('dialerProxyRules'));
             const configId = c.req.query('configId');
             const lang = c.get('lang');
 
@@ -156,7 +163,9 @@ export function createApp(bindings = {}) {
                 enableClashUI,
                 externalController,
                 externalUiDownloadUrl,
-                includeAutoSelect
+                includeAutoSelect,
+                dialerProxy,
+                dialerProxyRules
             );
             await builder.build();
             return c.text(builder.formatConfig(), 200, {
@@ -179,6 +188,8 @@ export function createApp(bindings = {}) {
             const ua = c.req.query('ua') || getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT;
             const groupByCountry = parseBooleanFlag(c.req.query('group_by_country'));
             const includeAutoSelect = c.req.query('include_auto_select') !== 'false';
+            const dialerProxy = c.req.query('dialer_proxy') || c.req.query('dialerProxy') || '';
+            const dialerProxyRules = parseDialerProxyRules(c.req.query('dialer_proxy_rules') || c.req.query('dialerProxyRules'));
             const configId = c.req.query('configId');
             const lang = c.get('lang');
 
@@ -196,7 +207,9 @@ export function createApp(bindings = {}) {
                 lang,
                 ua,
                 groupByCountry,
-                includeAutoSelect
+                includeAutoSelect,
+                dialerProxy,
+                dialerProxyRules
             );
             const output = await builder.build();
 
@@ -398,6 +411,35 @@ export function createApp(bindings = {}) {
         }
     });
 
+    app.post('/inspect', async (c) => {
+        try {
+            const body = await c.req.json();
+            const config = typeof body?.config === 'string' ? body.config : '';
+            const ua = typeof body?.ua === 'string' ? body.ua : (getRequestHeader(c.req, 'User-Agent') || DEFAULT_USER_AGENT);
+
+            if (!config.trim()) {
+                return c.json({ proxies: [] }, 200);
+            }
+
+            const { parsedItems } = await parseProxyInput(config, { userAgent: ua });
+            const proxies = parsedItems
+                .filter((item) => item && typeof item.tag === 'string' && item.tag.trim())
+                .map((item) => ({
+                    name: item.tag,
+                    type: item.type || 'unknown'
+                }));
+
+            return c.json({
+                proxies: dedupeProxySummaries(proxies)
+            });
+        } catch (error) {
+            if (error instanceof SyntaxError) {
+                return c.text('Invalid JSON body', 400);
+            }
+            return handleError(c, error, runtime.logger);
+        }
+    });
+
     app.get('/resolve', async (c) => {
         try {
             const shortUrl = c.req.query('url');
@@ -472,6 +514,32 @@ function parseJsonArray(raw) {
     } catch {
         return [];
     }
+}
+
+function parseDialerProxyRules(raw) {
+    const parsed = parseJsonArray(raw);
+    return parsed
+        .map((rule) => ({
+            proxyNames: Array.isArray(rule?.proxyNames)
+                ? [...new Set(rule.proxyNames.map((name) => typeof name === 'string' ? name.trim() : '').filter(Boolean))]
+                : [],
+            target: typeof rule?.target === 'string' ? rule.target.trim() : ''
+        }))
+        .filter((rule) => rule.proxyNames.length > 0 && rule.target);
+}
+
+function dedupeProxySummaries(proxies) {
+    const seen = new Set();
+    const result = [];
+    for (const proxy of proxies) {
+        const name = typeof proxy?.name === 'string' ? proxy.name.trim() : '';
+        if (!name || seen.has(name)) {
+            continue;
+        }
+        seen.add(name);
+        result.push(proxy);
+    }
+    return result;
 }
 
 function parseBooleanFlag(value) {

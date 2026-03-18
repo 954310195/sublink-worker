@@ -85,6 +85,9 @@ export const formLogicFn = (t) => {
             subconverterCopied: false,
             groupByCountry: false,
             includeAutoSelect: true,
+            detectedProxies: [],
+            inspectingNodes: false,
+            dialerProxyRules: [],
             enableClashUI: false,
             externalController: '',
             externalUiDownloadUrl: '',
@@ -132,6 +135,12 @@ export const formLogicFn = (t) => {
                 this.showAdvanced = localStorage.getItem('advancedToggle') === 'true';
                 this.groupByCountry = localStorage.getItem('groupByCountry') === 'true';
                 this.includeAutoSelect = localStorage.getItem('includeAutoSelect') !== 'false';
+                try {
+                    this.dialerProxyRules = JSON.parse(localStorage.getItem('dialerProxyRules') || '[]')
+                        .map(rule => this.normalizeDialerProxyRule(rule));
+                } catch {
+                    this.dialerProxyRules = [];
+                }
                 this.enableClashUI = localStorage.getItem('enableClashUI') === 'true';
                 this.externalController = localStorage.getItem('externalController') || '';
                 this.externalUiDownloadUrl = localStorage.getItem('externalUiDownloadUrl') || '';
@@ -163,10 +172,16 @@ export const formLogicFn = (t) => {
                 this.$watch('showAdvanced', val => localStorage.setItem('advancedToggle', val));
                 this.$watch('groupByCountry', val => localStorage.setItem('groupByCountry', val));
                 this.$watch('includeAutoSelect', val => localStorage.setItem('includeAutoSelect', val));
+                this.$watch('dialerProxyRules', val => localStorage.setItem('dialerProxyRules', JSON.stringify(val)), { deep: true });
                 this.$watch('enableClashUI', val => localStorage.setItem('enableClashUI', val));
                 this.$watch('externalController', val => localStorage.setItem('externalController', val));
                 this.$watch('externalUiDownloadUrl', val => localStorage.setItem('externalUiDownloadUrl', val));
-                this.$watch('customUA', val => localStorage.setItem('userAgent', val));
+                this.$watch('customUA', val => {
+                    localStorage.setItem('userAgent', val);
+                    if (this.input.trim()) {
+                        this.refreshDetectedProxies(this.input.trim());
+                    }
+                });
                 this.$watch('configEditor', val => {
                     localStorage.setItem('configEditor', val);
                     this.resetConfigValidation();
@@ -177,6 +192,10 @@ export const formLogicFn = (t) => {
                 });
                 this.$watch('customShortCode', val => localStorage.setItem('customShortCode', val));
                 this.$watch('accordionSections', val => localStorage.setItem('accordionSections', JSON.stringify(val)), { deep: true });
+
+                if (this.input.trim()) {
+                    this.refreshDetectedProxies(this.input.trim());
+                }
             },
 
             toggleAccordion(section) {
@@ -347,8 +366,11 @@ export const formLogicFn = (t) => {
                     this.generatedLinks = null;
                     this.shortenedLinks = null;
                     this.customShortCode = '';
+                    this.detectedProxies = [];
+                    this.dialerProxyRules = [];
                     // Also clear from localStorage
                     localStorage.removeItem('customShortCode');
+                    localStorage.removeItem('dialerProxyRules');
                 }
             },
 
@@ -380,6 +402,10 @@ export const formLogicFn = (t) => {
 
                     if (this.groupByCountry) params.append('group_by_country', 'true');
                     if (!this.includeAutoSelect) params.append('include_auto_select', 'false');
+                    const dialerProxyRules = this.getActiveDialerProxyRules();
+                    if (dialerProxyRules.length > 0) {
+                        params.append('dialer_proxy_rules', JSON.stringify(dialerProxyRules));
+                    }
                     if (this.enableClashUI) params.append('enable_clash_ui', 'true');
                     if (this.externalController) params.append('external_controller', this.externalController);
                     if (this.externalUiDownloadUrl) params.append('external_ui_download_url', this.externalUiDownloadUrl);
@@ -495,13 +521,87 @@ export const formLogicFn = (t) => {
 
                 // If input is empty, don't try to parse
                 if (!val || !val.trim()) {
+                    this.detectedProxies = [];
+                    this.dialerProxyRules = [];
                     return;
                 }
 
                 // Debounce for 500ms
                 this.parseDebounceTimer = setTimeout(() => {
+                    this.refreshDetectedProxies(val.trim());
                     this.tryParseSubscriptionUrl(val.trim());
                 }, 500);
+            },
+
+            normalizeDialerProxyRule(rule = {}) {
+                return {
+                    proxyNames: Array.isArray(rule.proxyNames)
+                        ? [...new Set(rule.proxyNames.map((name) => typeof name === 'string' ? name.trim() : '').filter(Boolean))]
+                        : [],
+                    target: typeof rule.target === 'string' ? rule.target : ''
+                };
+            },
+
+            getActiveDialerProxyRules() {
+                return this.dialerProxyRules
+                    .map(rule => this.normalizeDialerProxyRule(rule))
+                    .map(rule => ({ ...rule, target: rule.target.trim() }))
+                    .filter(rule => rule.proxyNames.length > 0 && rule.target);
+            },
+
+            addDialerProxyRule() {
+                this.dialerProxyRules.push({
+                    proxyNames: [],
+                    target: ''
+                });
+            },
+
+            removeDialerProxyRule(index) {
+                this.dialerProxyRules.splice(index, 1);
+            },
+
+            syncDialerProxyRulesWithDetectedProxies() {
+                const validNames = new Set(this.detectedProxies.map((proxy) => proxy.name));
+                this.dialerProxyRules = this.dialerProxyRules.map((rule) => {
+                    const normalized = this.normalizeDialerProxyRule(rule);
+                    if (validNames.size === 0) {
+                        return normalized;
+                    }
+                    return {
+                        ...normalized,
+                        proxyNames: normalized.proxyNames.filter((name) => validNames.has(name))
+                    };
+                });
+            },
+
+            async refreshDetectedProxies(text) {
+                this.inspectingNodes = true;
+                try {
+                    const response = await fetch('/inspect', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            config: text,
+                            ua: this.customUA
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Inspect failed with status ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    this.detectedProxies = Array.isArray(data?.proxies) ? data.proxies : [];
+                    this.syncDialerProxyRulesWithDetectedProxies();
+                } catch (error) {
+                    console.error('Failed to inspect proxies:', error);
+                    this.detectedProxies = [];
+                    this.syncDialerProxyRulesWithDetectedProxies();
+                } finally {
+                    this.inspectingNodes = false;
+                }
             },
 
             // Check if input looks like a subscription URL
@@ -636,6 +736,18 @@ export const formLogicFn = (t) => {
                     this.externalUiDownloadUrl = externalUiDownloadUrl;
                 }
 
+                const dialerProxyRules = params.get('dialer_proxy_rules') || params.get('dialerProxyRules');
+                if (dialerProxyRules) {
+                    try {
+                        const parsed = JSON.parse(dialerProxyRules);
+                        if (Array.isArray(parsed)) {
+                            this.dialerProxyRules = parsed.map(rule => this.normalizeDialerProxyRule(rule));
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse dialer_proxy_rules:', e);
+                    }
+                }
+
                 const ua = params.get('ua');
                 if (ua) {
                     this.customUA = ua;
@@ -649,7 +761,7 @@ export const formLogicFn = (t) => {
 
                 // Expand advanced options if any advanced settings are present
                 if (selectedRules || customRules || this.groupByCountry || this.enableClashUI ||
-                    externalController || externalUiDownloadUrl || ua || configId) {
+                    externalController || externalUiDownloadUrl || dialerProxyRules || ua || configId) {
                     this.showAdvanced = true;
                 }
             }

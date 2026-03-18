@@ -185,6 +185,89 @@ export const Form = (props) => {
                 </div>
               </label>
 
+              <div class="p-4 rounded-xl bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-700 space-y-4">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">{t('dialerProxyRules')}</label>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{t('dialerProxyRulesTip')}</p>
+                  </div>
+                  <button
+                    type="button"
+                    x-on:click="addDialerProxyRule()"
+                    class="px-3 py-2 rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors text-sm font-medium flex items-center gap-2"
+                  >
+                    <i class="fas fa-plus"></i>
+                    {t('addDialerProxyRule')}
+                  </button>
+                </div>
+
+                <div class="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-800/60 p-3">
+                  <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                    <i class="fas" x-bind:class="inspectingNodes ? 'fa-spinner fa-spin' : 'fa-diagram-project'"></i>
+                    <span x-text="inspectingNodes ? `${t('detectingNodes')}` : `${t('detectedNodes')}: ${detectedProxies.length}`"></span>
+                  </div>
+                  <template x-if="!inspectingNodes && detectedProxies.length === 0">
+                    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{t('noDetectedNodes')}</p>
+                  </template>
+                  <template x-if="detectedProxies.length > 0">
+                    <div class="mt-3 flex flex-wrap gap-2">
+                      <template x-for="proxy in detectedProxies" x-bind:key="proxy.name">
+                        <span class="px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-xs text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600" x-text="proxy.name"></span>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+
+                <template x-if="dialerProxyRules.length === 0">
+                  <div class="text-sm text-gray-500 dark:text-gray-400 rounded-lg border border-dashed border-gray-200 dark:border-gray-700 p-4 text-center">
+                    {t('noDialerProxyRules')}
+                  </div>
+                </template>
+
+                <div class="space-y-4">
+                  <template x-for="(rule, index) in dialerProxyRules" x-bind:key="index">
+                    <div class="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 space-y-4">
+                      <div class="flex items-center justify-between gap-3">
+                        <p class="text-sm font-medium text-gray-800 dark:text-gray-100" x-text={`'${t('chainRule')}' + ' ' + (index + 1)`}></p>
+                        <button
+                          type="button"
+                          x-on:click="removeDialerProxyRule(index)"
+                          class="w-9 h-9 rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+                          aria-label={t('removeCustomRule')}
+                        >
+                          <i class="fas fa-trash-alt"></i>
+                        </button>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t('chainTarget')}</label>
+                        <input
+                          type="text"
+                          x-model="rule.target"
+                          class="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                          placeholder={t('chainTargetPlaceholder')}
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{t('selectNodes')}</label>
+                        <div class="max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 p-3 space-y-2">
+                          <template x-if="detectedProxies.length === 0">
+                            <p class="text-xs text-gray-500 dark:text-gray-400">{t('noDetectedNodes')}</p>
+                          </template>
+                          <template x-for="proxy in detectedProxies" x-bind:key="`${index}-${proxy.name}`">
+                            <label class="flex items-center gap-3 text-sm text-gray-700 dark:text-gray-300">
+                              <input type="checkbox" x-model="rule.proxyNames" x-bind:value="proxy.name" class="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500 dark:bg-gray-700 dark:border-gray-600" />
+                              <span x-text="proxy.name"></span>
+                            </label>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
               <label class="flex items-center justify-between p-3 rounded-lg bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                 <span class="font-medium text-gray-700 dark:text-gray-300">{t('enableClashUI')}</span>
                 <div class="relative inline-flex items-center cursor-pointer">

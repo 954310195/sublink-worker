@@ -116,4 +116,23 @@ ss://YWVzLTEyOC1nY206dGVzdA@example.com:444#US-Node-1
     expect(fallbackGroup).toBeDefined();
     expect(fallbackGroup.proxies[0]).not.toBe('DIRECT');
   });
+
+  it('should add dialer-proxy only to selected proxies when rules are configured', async () => {
+    const input = `
+ss://YWVzLTEyOC1nY206dGVzdA@example.com:443#HK-Node-1
+ss://YWVzLTEyOC1nY206dGVzdA@example.com:444#US-Node-1
+    `;
+
+    const builder = new ClashConfigBuilder(input, 'minimal', [], null, 'zh-CN', 'mihomo', false, false, undefined, undefined, true, '', [
+      { proxyNames: ['HK-Node-1'], target: 'relay-group' }
+    ]);
+    const yamlText = await builder.build();
+    const built = yaml.load(yamlText);
+
+    const hk = built.proxies?.find((item) => item?.name === 'HK-Node-1');
+    const us = built.proxies?.find((item) => item?.name === 'US-Node-1');
+
+    expect(hk?.['dialer-proxy']).toBe('relay-group');
+    expect(us).not.toHaveProperty('dialer-proxy');
+  });
 });

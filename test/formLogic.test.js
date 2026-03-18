@@ -30,6 +30,14 @@ describe('formLogic toString fix', () => {
     const data = result.formData();
     expect(typeof data.submitForm).toBe('function');
     expect(typeof data.toggleAccordion).toBe('function');
+    expect(typeof data.addDialerProxyRule).toBe('function');
     expect(data.showAdvanced).toBe(false);
+  });
+
+  it('includes dialer_proxy_rules parameter generation in submitForm', () => {
+    const fnString = formLogicFn.toString();
+    expect(fnString).toContain('dialer_proxy_rules');
+    expect(fnString).toContain('dialerProxyRules');
+    expect(fnString).toContain('refreshDetectedProxies');
   });
 });

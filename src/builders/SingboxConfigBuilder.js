@@ -7,9 +7,9 @@ import { buildSelectorMembers as buildSelectorMemberList, buildNodeSelectMembers
 import { normalizeGroupName } from './helpers/groupNameUtils.js';
 
 export class SingboxConfigBuilder extends BaseConfigBuilder {
-    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, enableClashUI = false, externalController, externalUiDownloadUrl, singboxVersion = '1.12', includeAutoSelect = true) {
+    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, enableClashUI = false, externalController, externalUiDownloadUrl, singboxVersion = '1.12', includeAutoSelect = true, dialerProxy = '', dialerProxyRules = []) {
         const resolvedBaseConfig = baseConfig ?? SING_BOX_CONFIG;
-        super(inputString, resolvedBaseConfig, lang, userAgent, groupByCountry, includeAutoSelect);
+        super(inputString, resolvedBaseConfig, lang, userAgent, groupByCountry, includeAutoSelect, dialerProxy, dialerProxyRules);
 
         this.selectedRules = selectedRules;
         this.customRules = customRules;
@@ -116,6 +116,18 @@ export class SingboxConfigBuilder extends BaseConfigBuilder {
         delete sanitized.packet_encoding;
 
         return sanitized;
+    }
+
+    decorateProxy(proxy) {
+        if (!proxy) {
+            return proxy;
+        }
+        const target = this.resolveDialerProxyTarget(this.getProxyName(proxy));
+        if (!target) return proxy;
+        return {
+            ...proxy,
+            detour: target
+        };
     }
 
     addProxyToConfig(proxy) {

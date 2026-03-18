@@ -52,7 +52,7 @@ function normalizeStashDnsConfig(dns) {
 }
 
 export class StashConfigBuilder extends ClashConfigBuilder {
-    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, includeAutoSelect = true) {
+    constructor(inputString, selectedRules, customRules, baseConfig, lang, userAgent, groupByCountry = false, includeAutoSelect = true, dialerProxy = '', dialerProxyRules = []) {
         super(
             inputString,
             selectedRules,
@@ -64,7 +64,9 @@ export class StashConfigBuilder extends ClashConfigBuilder {
             false,
             undefined,
             undefined,
-            includeAutoSelect
+            includeAutoSelect,
+            dialerProxy,
+            dialerProxyRules
         );
     }
 
