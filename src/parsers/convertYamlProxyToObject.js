@@ -173,6 +173,7 @@ export function convertYamlProxyToObject(p) {
                 tls,
                 transport,
                 flow: p.flow ?? undefined,
+                udp: typeof p.udp !== 'undefined' ? !!p.udp : undefined,
                 alpn: toArray(p.alpn)
             };
         }
@@ -189,7 +190,7 @@ export function convertYamlProxyToObject(p) {
                 obfs.type = p.obfs;
                 obfs.password = p['obfs-password'];
             }
-            const hopIntervalRaw = p['hop-interval'];
+            const hopIntervalRaw = p['hop-interval'] ?? p.hop_interval;
             const hopInterval = Number(hopIntervalRaw);
             return {
                 tag: name,
@@ -203,7 +204,7 @@ export function convertYamlProxyToObject(p) {
                 recv_window_conn: p['recv-window-conn'],
                 up: p.up,
                 down: p.down,
-                ports: p.ports,
+                ports: p.mport || p.ports,
                 hop_interval: Number.isNaN(hopInterval) ? hopIntervalRaw : hopInterval,
                 alpn: toArray(p.alpn),
                 fast_open: typeof p['fast-open'] !== 'undefined' ? !!p['fast-open'] : undefined
@@ -251,7 +252,7 @@ export function convertYamlProxyToObject(p) {
                 server: p.server,
                 server_port: parseInt(p.port),
                 password: p.password,
-                udp: !!p.udp,
+                udp: typeof p.udp !== 'undefined' ? !!p.udp : undefined,
                 'idle-session-check-interval': p['idle-session-check-interval'],
                 'idle-session-timeout': p['idle-session-timeout'],
                 'min-idle-session': p['min-idle-session'],

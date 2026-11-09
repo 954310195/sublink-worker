@@ -1,4 +1,4 @@
-import { deepCopy } from '../utils.js';
+import { createStableProviderName, deepCopy } from '../utils.js';
 import { createTranslator } from '../i18n/index.js';
 import { generateRules, getOutbounds, PREDEFINED_RULE_SETS } from '../config/index.js';
 import { parseProxyInput } from '../services/proxyInputService.js';
@@ -26,6 +26,8 @@ export class BaseConfigBuilder {
                 .filter((rule) => rule.proxyNames.length > 0 && rule.target)
             : [];
         this.providerUrls = [];  // URLs to use as providers (auto-sync)
+        this.providerNodeNames = [];
+        this.autoProviderDescriptors = undefined;
     }
 
     async build() {
@@ -36,13 +38,14 @@ export class BaseConfigBuilder {
     }
 
     async parseCustomItems() {
-        const { parsedItems, providerUrls, configOverrides } = await parseProxyInput(this.inputString, {
+        const { parsedItems, providerUrls, providerNodeNames, configOverrides } = await parseProxyInput(this.inputString, {
             userAgent: this.userAgent,
             isCompatibleProviderFormat: (format) => this.isCompatibleProviderFormat(format)
         });
 
         configOverrides.forEach((config) => this.applyConfigOverrides(config));
         this.providerUrls.push(...providerUrls);
+        this.providerNodeNames.push(...providerNodeNames);
         return parsedItems;
     }
 
@@ -54,6 +57,43 @@ export class BaseConfigBuilder {
      */
     isCompatibleProviderFormat(format) {
         return false;  // Default: no provider support
+    }
+
+    getAutoProviderDescriptors(reservedNames = []) {
+        if (this.autoProviderDescriptors) {
+            return this.autoProviderDescriptors;
+        }
+
+        const usedNames = new Set(reservedNames);
+        const providerNamesByUrl = new Map();
+        const descriptors = [];
+
+        for (const url of this.providerUrls) {
+            if (typeof url !== 'string' || url.trim() === '') {
+                throw new Error('Provider URL must be a non-empty string');
+            }
+
+            const normalizedUrl = url.trim();
+            if (providerNamesByUrl.has(normalizedUrl)) {
+                continue;
+            }
+
+            const baseName = createStableProviderName(normalizedUrl);
+            let name = baseName;
+            let suffix = 2;
+
+            while (usedNames.has(name)) {
+                name = `${baseName}_${suffix}`;
+                suffix += 1;
+            }
+
+            usedNames.add(name);
+            providerNamesByUrl.set(normalizedUrl, name);
+            descriptors.push({ name, url: normalizedUrl });
+        }
+
+        this.autoProviderDescriptors = descriptors;
+        return descriptors;
     }
 
     applyConfigOverrides(overrides) {

@@ -1,35 +1,81 @@
 import { decodeBase64 } from '../../utils.js';
 import { parseSubscriptionContent } from './subscriptionContentParser.js';
 
+const SUBSCRIPTION_URI_PATTERN = /^(ss|vmess|vless|hysteria|hysteria2|hy2|trojan|tuic|anytls|http|https):\/\//i;
+
+function hasSubscriptionUriLine(content) {
+    return content
+        .split(/\r?\n/)
+        .some(line => SUBSCRIPTION_URI_PATTERN.test(line.trim()));
+}
+
+function isPlainSubscriptionContent(content) {
+    return typeof content === 'string' && content.length > 0 &&
+        (detectFormat(content) !== 'unknown' || hasSubscriptionUriLine(content));
+}
+
+function decodeUriComponentIfNeeded(text) {
+    const trimmed = text.trim();
+    if (!trimmed.includes('%')) {
+        return trimmed;
+    }
+    try {
+        return decodeURIComponent(trimmed).trim();
+    } catch {
+        return trimmed;
+    }
+}
+
+function normalizeBase64Candidate(text) {
+    const compact = text.replace(/\s+/g, '');
+    if (!compact || !/^[A-Za-z0-9+/_-]*={0,2}$/.test(compact)) {
+        return null;
+    }
+    const withoutPadding = compact.replace(/=+$/, '');
+    if (withoutPadding.length % 4 === 1) {
+        return null;
+    }
+    const normalized = withoutPadding.replace(/-/g, '+').replace(/_/g, '/');
+    return normalized + '='.repeat((4 - normalized.length % 4) % 4);
+}
+
 /**
- * Decode content, trying Base64 first, then URL decoding if needed
+ * Decode only the subscription envelope; protocol parsers own URI parameters.
  * @param {string} text - Raw text content
  * @returns {string} - Decoded content
  */
 function decodeContent(text) {
-    let decodedText;
-    try {
-        decodedText = decodeBase64(text.trim());
-        if (decodedText.includes('%')) {
-            decodedText = decodeURIComponent(decodedText);
-        }
-    } catch (e) {
-        decodedText = text;
-        if (decodedText.includes('%')) {
-            try {
-                decodedText = decodeURIComponent(decodedText);
-            } catch (urlError) {
-                console.warn('Failed to URL decode the text:', urlError);
-            }
-        }
+    const trimmed = text.trim();
+    if (isPlainSubscriptionContent(trimmed)) {
+        return trimmed;
     }
-    return decodedText;
+    const urlDecodedText = decodeUriComponentIfNeeded(trimmed);
+    if (isPlainSubscriptionContent(urlDecodedText)) {
+        return urlDecodedText;
+    }
+    const base64Candidate = normalizeBase64Candidate(urlDecodedText);
+    if (!base64Candidate) {
+        return urlDecodedText;
+    }
+    try {
+        const decodedText = decodeBase64(base64Candidate).trim();
+        if (isPlainSubscriptionContent(decodedText)) {
+            return decodedText;
+        }
+        const uriDecodedText = decodeUriComponentIfNeeded(decodedText);
+        if (isPlainSubscriptionContent(uriDecodedText)) {
+            return uriDecodedText;
+        }
+    } catch {
+        return urlDecodedText;
+    }
+    return urlDecodedText;
 }
 
 /**
  * Detect the format of subscription content
  * @param {string} content - Decoded subscription content
- * @returns {'clash'|'singbox'|'unknown'} - Detected format
+ * @returns {'clash'|'singbox'|'surge'|'unknown'} - Detected format
  */
 function detectFormat(content) {
     const trimmed = content.trim();
@@ -49,6 +95,10 @@ function detectFormat(content) {
     // Try YAML (Clash format) - check for proxies: key
     if (trimmed.includes('proxies:')) {
         return 'clash';
+    }
+
+    if (/\[(General|Proxy|Rule|Proxy Group)\]/i.test(trimmed)) {
+        return 'surge';
     }
 
     return 'unknown';
@@ -87,7 +137,7 @@ export async function fetchSubscription(url, userAgent) {
  * Fetch subscription content and detect its format without parsing
  * @param {string} url - The subscription URL to fetch
  * @param {string} userAgent - Optional User-Agent header
- * @returns {Promise<{content: string, format: 'clash'|'singbox'|'unknown', url: string}|null>}
+ * @returns {Promise<{content: string, format: 'clash'|'singbox'|'surge'|'unknown', url: string}|null>}
  */
 export async function fetchSubscriptionWithFormat(url, userAgent) {
     try {
