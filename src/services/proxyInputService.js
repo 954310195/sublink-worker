@@ -32,13 +32,14 @@ export async function parseProxyInput(inputString, {
     const input = inputString || '';
     const parsedItems = [];
     const providerUrls = [];
+    const providerNodeNames = [];
     const configOverrides = [];
 
     const { parseSubscriptionContent } = await import('../parsers/subscription/subscriptionContentParser.js');
 
     const directResult = parseSubscriptionContent(input);
     if (collectParsedConfig(directResult, parsedItems, configOverrides) && parsedItems.length > 0) {
-        return { parsedItems, providerUrls, configOverrides };
+        return { parsedItems, providerUrls, providerNodeNames, configOverrides };
     }
 
     const isBase64Like = /^[A-Za-z0-9+/=\r\n]+$/.test(input) && input.replace(/[\r\n]/g, '').length % 4 === 0;
@@ -49,7 +50,7 @@ export async function parseProxyInput(inputString, {
             if (typeof decodedWhole === 'string') {
                 const decodedResult = parseSubscriptionContent(decodedWhole);
                 if (collectParsedConfig(decodedResult, parsedItems, configOverrides) && parsedItems.length > 0) {
-                    return { parsedItems, providerUrls, configOverrides };
+                    return { parsedItems, providerUrls, providerNodeNames, configOverrides };
                 }
             }
         } catch (_) {
@@ -79,6 +80,18 @@ export async function parseProxyInput(inputString, {
                     const { content, format, url: originalUrl } = fetchResult;
                     if (isCompatibleProviderFormat(format)) {
                         providerUrls.push(originalUrl);
+                        // Keep remote nodes remote; only their names are needed for country filters.
+                        try {
+                            const providerConfig = parseSubscriptionContent(content);
+                            for (const proxy of providerConfig?.proxies || []) {
+                                const name = proxy?.tag ?? proxy?.name;
+                                if (typeof name === 'string' && name.trim()) {
+                                    providerNodeNames.push(name.trim());
+                                }
+                            }
+                        } catch (_) {
+                            // Country discovery must not invalidate an otherwise usable provider.
+                        }
                         continue;
                     }
 
@@ -127,7 +140,7 @@ export async function parseProxyInput(inputString, {
         }
     }
 
-    return { parsedItems, providerUrls, configOverrides };
+    return { parsedItems, providerUrls, providerNodeNames, configOverrides };
 }
 
 function uniqueStrings(values = []) {

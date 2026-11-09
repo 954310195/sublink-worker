@@ -72,8 +72,7 @@ export class StashConfigBuilder extends ClashConfigBuilder {
 
     generateProxyProviders() {
         const providers = {};
-        this.providerUrls.forEach((url, index) => {
-            const name = `_auto_provider_${index + 1}`;
+        this.getAutoProviderDescriptors(this.getExistingProviderNames()).forEach(({ name, url }) => {
             providers[name] = {
                 url,
                 interval: 3600
@@ -148,8 +147,8 @@ export class StashConfigBuilder extends ClashConfigBuilder {
             };
         }
 
-        this.validateProxyGroups();
         sanitizeClashProxyGroups(this.config);
+        this.validateProxyGroups();
 
         this.config.rules = [
             ...ruleResults,
