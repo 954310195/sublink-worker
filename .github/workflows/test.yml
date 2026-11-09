@@ -15,10 +15,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '21'
+          node-version-file: '.nvmrc'
+          cache: 'npm'
           
       - name: Install dependencies
-        run: npm install
+        run: npm ci
         
       - name: Run tests
         run: npm test
+
+      - name: Test deployment setup
+        run: node --test scripts/setup-kv-check.cjs
+
+      - name: Verify Worker build
+        run: npx --no-install wrangler deploy --dry-run
+        env:
+          WRANGLER_SEND_METRICS: 'false'
