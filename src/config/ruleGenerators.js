@@ -18,6 +18,14 @@ function toStringArray(value) {
 	return [];
 }
 
+// Custom identifiers become URL and local-file path segments. Keep ! for existing
+// geosite names while rejecting URL delimiters, encoded paths, and dot traversal.
+const SAFE_RULE_ID_RE = /^[A-Za-z0-9_!-]+(?:\.[A-Za-z0-9_!-]+)*$/;
+
+function sanitizeRuleIds(value) {
+	return toStringArray(value).filter(id => SAFE_RULE_ID_RE.test(id));
+}
+
 // Helper function to get outbounds based on selected rule names
 export function getOutbounds(selectedRuleNames) {
 	if (!selectedRuleNames || !Array.isArray(selectedRuleNames)) {
@@ -55,8 +63,8 @@ export function generateRules(selectedRules = [], customRules = []) {
 	customRules.reverse();
 	customRules.forEach((rule) => {
 		rules.unshift({
-			site_rules: toStringArray(rule.site),
-			ip_rules: toStringArray(rule.ip),
+			site_rules: sanitizeRuleIds(rule.site),
+			ip_rules: sanitizeRuleIds(rule.ip),
 			domain_suffix: toStringArray(rule.domain_suffix),
 			domain_keyword: toStringArray(rule.domain_keyword),
 			ip_cidr: toStringArray(rule.ip_cidr),
@@ -117,7 +125,7 @@ export function generateRuleSets(selectedRules = [], customRules = []) {
 
 	if (customRules) {
 		customRules.forEach(rule => {
-			toStringArray(rule.site).forEach(site => {
+			sanitizeRuleIds(rule.site).forEach(site => {
 				site_rule_sets.push({
 					tag: site,
 					type: 'remote',
@@ -125,7 +133,7 @@ export function generateRuleSets(selectedRules = [], customRules = []) {
 					url: `${SITE_RULE_SET_BASE_URL}geosite-${site}.srs`,
 				});
 			});
-			toStringArray(rule.ip).forEach(ip => {
+			sanitizeRuleIds(rule.ip).forEach(ip => {
 				ip_rule_sets.push({
 					tag: `${ip}-ip`,
 					type: 'remote',
@@ -207,7 +215,7 @@ export function generateClashRuleSets(selectedRules = [], customRules = [], useM
 	// Add custom rules
 	if (customRules) {
 		customRules.forEach(rule => {
-			toStringArray(rule.site).forEach(site => {
+			sanitizeRuleIds(rule.site).forEach(site => {
 				site_rule_providers[site] = {
 					type: 'http',
 					format: format,
@@ -217,7 +225,7 @@ export function generateClashRuleSets(selectedRules = [], customRules = [], useM
 					interval: 86400
 				};
 			});
-			toStringArray(rule.ip).forEach(ip => {
+			sanitizeRuleIds(rule.ip).forEach(ip => {
 				ip_rule_providers[`${ip}-ip`] = {
 					type: 'http',
 					format: format,
@@ -288,7 +296,7 @@ export function generateStashRuleSets(selectedRules = [], customRules = [], useM
 
 	if (customRules) {
 		customRules.forEach(rule => {
-			toStringArray(rule.site).forEach(site => {
+			sanitizeRuleIds(rule.site).forEach(site => {
 				site_rule_providers[site] = {
 					url: `${CLASH_SITE_RULE_SET_BASE_URL}${site}${ext}`,
 					interval: 86400,
@@ -296,7 +304,7 @@ export function generateStashRuleSets(selectedRules = [], customRules = [], useM
 					format
 				};
 			});
-			toStringArray(rule.ip).forEach(ip => {
+			sanitizeRuleIds(rule.ip).forEach(ip => {
 				ip_rule_providers[`${ip}-ip`] = {
 					url: `${CLASH_IP_RULE_SET_BASE_URL}${ip}${ext}`,
 					interval: 86400,

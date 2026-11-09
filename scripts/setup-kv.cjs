@@ -1,185 +1,102 @@
 #!/usr/bin/env node
 
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 
-const KV_NAMESPACE = 'SUBLINK_KV';
-const WORKER_NAME = 'sublink-worker'
-const KV_NAMESPACE_NAME = `${WORKER_NAME}-${KV_NAMESPACE}`;
-const LEGACY_KV_NAMESPACE_NAME = `${WORKER_NAME}-${WORKER_NAME}-${KV_NAMESPACE}`;  // 历史遗留的命名空间名称
-const FALLBACK_KV_NAMESPACE_NAME = KV_NAMESPACE; // 早期账号里只叫 SUBLINK_KV
+const KV_NAMESPACE_NAME = 'sublink-worker-SUBLINK_KV';
 const SUPPORTED_TITLES = [
   KV_NAMESPACE_NAME,
-  LEGACY_KV_NAMESPACE_NAME,
-  FALLBACK_KV_NAMESPACE_NAME
+  'sublink-worker-sublink-worker-SUBLINK_KV',
+  'SUBLINK_KV'
 ];
 const WRANGLER_CONFIG_PATH = path.join(__dirname, '..', 'wrangler.toml');
+const WRANGLER_CLI_PATH = path.join(__dirname, '..', 'node_modules', 'wrangler', 'bin', 'wrangler.js');
 
-// 执行wrangler命令并返回结果
-function runWranglerCommand(command, ignoreError = false) {
+function runWranglerCommand(args) {
+  if (!fs.existsSync(WRANGLER_CLI_PATH)) {
+    throw new Error('Local Wrangler is missing. Run npm ci before deploying.');
+  }
   try {
-    return execSync(`npx wrangler ${command}`, { encoding: 'utf8', stdio: 'pipe' });
+    return execFileSync(process.execPath, [WRANGLER_CLI_PATH, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, WRANGLER_SEND_METRICS: 'false' }
+    });
   } catch (error) {
-    if (ignoreError) {
-      throw error;
-    }
-    console.error(`执行命令失败: npx wrangler ${command}`);
-    console.error(error.message);
-    if (error.stdout) console.log('stdout:', error.stdout.toString());
-    if (error.stderr) console.error('stderr:', error.stderr.toString());
-    process.exit(1);
+    const details = String(error.stderr || '').trim() || String(error.stdout || '').trim() || error.message;
+    throw new Error(`Wrangler ${args.join(' ')} failed: ${details}`);
   }
 }
 
-// 检查KV namespace是否存在
-function checkKvNamespaceExists() {
-  console.log(`正在检查KV namespace ${SUPPORTED_TITLES.map(title => `"${title}"`).join('、')} 是否存在...`);
-  let output;
-  try {
-    output = runWranglerCommand('kv namespace list');
-  } catch (e) {
-    console.error('获取KV列表失败，跳过检查');
-    return null;
+function readKvBinding(config) {
+  const match = config.match(/\{[^{}]*\bbinding\s*=\s*"SUBLINK_KV"[^{}]*\}/);
+  const id = match?.[0].match(/\bid\s*=\s*"([^"]*)"/);
+  if (!match || !id) {
+    // Appending after [assets] would put the binding in the wrong TOML table.
+    throw new Error('Expected an inline SUBLINK_KV binding with an id in wrangler.toml.');
   }
-  
-  try {
-    // 尝试从输出中提取JSON部分（如果有）
-    const jsonMatch = output.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      const namespaces = JSON.parse(jsonMatch[0]);
-      // 优先使用按顺序声明的各版本命名空间
-      for (const title of SUPPORTED_TITLES) {
-        const namespace = namespaces.find(ns => ns.title === title);
-        if (namespace) {
-          console.log(`找到命名空间: ${title}`);
-          return namespace;
-        }
-      }
-      
-      return null;
-    }
-    
-    // 如果没有匹配到JSON格式，就使用正则表达式查找namespace
-    for (const title of SUPPORTED_TITLES) {
-      const namespaceRegex = new RegExp(`"${title}"\\s*([a-zA-Z0-9-]+)`);
-      const match = output.match(namespaceRegex);
-      if (match) {
-        console.log(`找到命名空间: ${title}`);
-        return {
-          title,
-          id: match[1]
-        };
-      }
-    }
-
-    return null;
-  } catch (error) {
-    console.error('解析KV namespace列表失败:', error.message);
-    console.error('原始输出:', output);
-    return null;
-  }
+  return { block: match[0], id: id[1], index: match.index };
 }
 
-// 从wrangler.toml读取现有ID
-function getExistingIdFromConfig() {
+function listNamespaces(runWrangler) {
+  const output = runWrangler(['kv', 'namespace', 'list']);
+  let namespaces;
   try {
-    const config = fs.readFileSync(WRANGLER_CONFIG_PATH, 'utf8');
-    const match = config.match(/id\s*=\s*"([a-zA-Z0-9]+)"/);
-    return match ? match[1] : null;
-  } catch (e) {
-    return null;
+    // The pinned Wrangler emits JSON on stdout; stderr must not enter this parser.
+    namespaces = JSON.parse(output);
+  } catch (_) {
+    throw new Error('Wrangler returned an invalid KV namespace list; the existing binding was left unchanged.');
   }
+  if (!Array.isArray(namespaces) || namespaces.some(namespace =>
+    !namespace || typeof namespace.title !== 'string' || !/^[a-f0-9]{32}$/i.test(namespace.id)
+  )) {
+    throw new Error('Wrangler returned an unexpected KV namespace list; the existing binding was left unchanged.');
+  }
+  return namespaces;
 }
 
-// 创建KV namespace
-function createKvNamespace() {
-  console.log(`创建KV namespace "${KV_NAMESPACE_NAME}"...`);
+function setupKv({ configPath = WRANGLER_CONFIG_PATH, runWrangler = runWranglerCommand, log = console.log } = {}) {
+  const config = fs.readFileSync(configPath, 'utf8');
+  const binding = readKvBinding(config);
+  const namespaces = listNamespaces(runWrangler);
 
-  try {
-    const output = runWranglerCommand(`kv namespace create "${KV_NAMESPACE}"`, true);
-    // 尝试从输出中提取ID
-    const idMatch = output.match(/id\s*=\s*"([^"]+)"/);
-    if (idMatch) {
-      return {
-        title: KV_NAMESPACE_NAME,
-        id: idMatch[1]
-      };
-    } else {
-      throw new Error('无法从输出中提取KV namespace ID');
-    }
-  } catch (error) {
-    const stderr = error.stderr ? error.stderr.toString() : '';
-    const stdout = error.stdout ? error.stdout.toString() : '';
-    const output = stderr + stdout;
-
-    // 检查是否是因为已存在导致的错误 (code: 10014)
-    if (output.includes('code: 10014') || output.includes('already exists')) {
-      console.log(`KV namespace "${KV_NAMESPACE_NAME}" 已存在 (虽然未在列表显示)。尝试使用 wrangler.toml 中的现有 ID。`);
-      const existingId = getExistingIdFromConfig();
-      if (existingId) {
-        console.log(`使用现有 ID: ${existingId}`);
-        return {
-          title: KV_NAMESPACE_NAME,
-          id: existingId
-        };
-      } else {
-        console.error('无法自动获取 ID：Namespace 已存在但在 wrangler.toml 中未找到现有 ID。请手动检查 Cloudflare 控制台。');
-        process.exit(1);
-      }
-    }
-
-    console.error('创建KV namespace失败:', error.message);
-    console.error('Output:', output);
-    process.exit(1);
-  }
-}
-
-// 更新wrangler.toml文件
-function updateWranglerConfig(kvNamespaceId) {
-  console.log(`更新wrangler.toml文件...`);
-  
-  try {
-    let config = fs.readFileSync(WRANGLER_CONFIG_PATH, 'utf8');
-    
-    // 使用正则表达式查找并替换KV namespace ID
-    const kvConfigRegex = /kv_namespaces\s*=\s*\[\s*{\s*binding\s*=\s*"SUBLINK_KV"\s*,\s*id\s*=\s*"([^"]*)"\s*}\s*\]/;
-    
-    if (kvConfigRegex.test(config)) {
-      config = config.replace(kvConfigRegex, `kv_namespaces = [\n  { binding = "SUBLINK_KV", id = "${kvNamespaceId}" }\n]`);
-    } else {
-      // 如果没有找到现有的KV配置，则添加新的配置
-      config += `\nkv_namespaces = [\n  { binding = "SUBLINK_KV", id = "${kvNamespaceId}" }\n]\n`;
-    }
-    
-    fs.writeFileSync(WRANGLER_CONFIG_PATH, config);
-    console.log('wrangler.toml文件已更新');
-  } catch (error) {
-    console.error('更新wrangler.toml文件失败:', error.message);
-    process.exit(1);
-  }
-}
-
-// 主函数
-function main() {
-  console.log('开始设置KV namespace...');
-  
-  // 检查KV namespace是否存在
-  let namespace = checkKvNamespaceExists();
-  
-  // 如果不存在，则创建
+  // Keep the existing data binding even when a newer standard title also exists.
+  let namespace = namespaces.find(item => item.id === binding.id);
   if (!namespace) {
-    console.log(`KV namespace "${KV_NAMESPACE_NAME}"不存在，正在创建...`);
-    namespace = createKvNamespace();
-    console.log(`KV namespace "${KV_NAMESPACE_NAME}"创建成功，ID: ${namespace.id}`);
-  } else {
-    console.log(`KV namespace "${KV_NAMESPACE_NAME}"已存在，ID: ${namespace.id}`);
+    const compatible = namespaces.filter(item => SUPPORTED_TITLES.includes(item.title));
+    if (compatible.length > 1) {
+      throw new Error('Multiple existing KV namespaces match. Set the intended SUBLINK_KV id in wrangler.toml before deploying.');
+    }
+    namespace = compatible[0];
   }
-  
-  // 更新wrangler.toml文件
-  updateWranglerConfig(namespace.id);
-  
-  console.log('设置完成！');
+
+  if (!namespace) {
+    log(`Creating KV namespace: ${KV_NAMESPACE_NAME}`);
+    runWrangler(['kv', 'namespace', 'create', KV_NAMESPACE_NAME, '--update-config=false']);
+    // Listing again avoids depending on the CLI's human-readable create output.
+    namespace = listNamespaces(runWrangler).find(item => item.title === KV_NAMESPACE_NAME);
+    if (!namespace) {
+      throw new Error('The new KV namespace was not found. Retry deployment after checking Cloudflare.');
+    }
+  }
+
+  const block = binding.block.replace(/(\bid\s*=\s*")[^"]*(")/, `$1${namespace.id}$2`);
+  const updated = config.slice(0, binding.index) + block + config.slice(binding.index + binding.block.length);
+  if (updated !== config) {
+    fs.writeFileSync(configPath, updated);
+  }
+  log(`Using KV namespace: ${namespace.title} (${namespace.id})`);
+  return namespace;
 }
 
-main(); 
+if (require.main === module) {
+  try {
+    setupKv();
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}
+
+module.exports = { setupKv };
